@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>語文大腦體操 - 飲食小偵探產生器</title>
+    
+    <!-- 引入 PDF 轉換套件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #10b981; /* Emerald 500 */
+            --primary-hover: #059669; /* Emerald 600 */
+            --dark-color: #064e3b;    /* Emerald 900 */
+            --bg-color: #f0fdf4;      /* Green 50 */
+            --ans-blue: #3b82f6;      /* Blue for circle */
+            --ans-red: #ef4444;       /* Red for cross */
+        }
+
+        body { 
+            font-family: "PingFang TC", "Microsoft JhengHei", Arial, sans-serif; 
+            background: var(--bg-color); 
+            margin: 0; 
+            padding: 0;
+            color: #334155;
+        }
+        
+        .top-banner { background: var(--primary-color); height: 5px; width: 100%; }
+
+        /* --- 控制面板 --- */
+        .controls {
+            background: white; 
+            padding: 20px; 
+            border-radius: 0 0 16px 16px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            max-width: 950px; 
+            margin: 0 auto 20px auto; 
+        }
+        
+        .controls h2 { margin: 0 0 12px 0; color: var(--dark-color); font-size: 1.5rem; display: flex; align-items: center; gap: 8px;}
+
+        .designer-info {
+            background: #ecfdf5; padding: 12px 16px; border-radius: 8px; font-size: 0.95rem;
+            color: #065f46; margin-bottom: 20px; border-left: 4px solid var(--primary-color);
+            line-height: 1.6;
+        }
+
+        .control-grid { display: grid; gap: 15px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+        .control-group { display: flex; flex-direction: column; }
+        label { font-weight: bold; margin-bottom: 6px; color: #475569; font-size: 0.9rem; }
+        input, select { padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 15px; }
+        input:focus, select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2); }
+
+        .btn-group { grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+        button { flex: 1; min-width: 140px; padding: 14px; border: none; border-radius: 10px; font-size: 16px; font-weight: bold; cursor: pointer; color: white; transition: all 0.2s; }
+        button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .gen-btn { background: var(--primary-color); }
+        .print-btn { background: #475569; }
+        .pdf-btn { background: #ea580c; }
+
+        /* 訊息提示框 */
+        #msgBox {
+            display: none; padding: 12px; border-radius: 8px; margin-bottom: 15px;
+            text-align: center; font-weight: bold; font-size: 15px;
+        }
+
+        /* --- 響應式 A4 預覽區 --- */
+        .preview-area { width: 100%; overflow-x: hidden; display: flex; flex-direction: column; align-items: center; padding-bottom: 40px; }
+        .sheet-scaler { transform-origin: top center; margin-bottom: 20px; }
+
+        .sheet {
+            background: white; 
+            width: 210mm; 
+            height: 297mm; 
+            padding: 15mm 20mm; 
+            box-sizing: border-box; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
+            display: flex; 
+            flex-direction: column; 
+            position: relative;
+        }
+
+        .sheet-header { border-bottom: 3px double var(--primary-color); padding-bottom: 8px; margin-bottom: 12px; }
+        .sheet-title { text-align: center; font-size: 24pt; font-weight: 900; color: #0f172a; margin-bottom: 12px; letter-spacing: 2px; }
+        .sheet-info { display: flex; justify-content: space-between; font-size: 13pt; font-weight: bold; color: #334155; }
+
+        .instruction {
+            background: #f8fafc; border: 2px solid #e2e8f0; padding: 12px 15px; border-radius: 10px;
+            color: #334155; font-size: 12pt; margin-bottom: 15px;
+            display: flex; align-items: center; line-height: 1.6;
+        }
+        .instruction-title { font-size: 14pt; font-weight: bold; color: var(--dark-color); margin-bottom: 4px; }
+        .task-list { margin-left: 5px; }
+        .task-list span { display: inline-block; margin-right: 15px; }
+
+        /* --- 主要題目區 --- */
+        .worksheet-body {
+            flex-grow: 1; 
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* 網格系統 */
+        .food-grid {
+            display: grid;
+            width: 100%;
+            flex-grow: 1;
+            align-items: center;
+            justify-items: center;
+        }
+        .grid-easy { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(4, 1fr); gap: 15px; padding: 10px; }
+        .grid-medium { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(5, 1fr); gap: 12px; padding: 5px; }
+        .grid-hard { grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(6, 1fr); gap: 8px; padding: 0px; }
+
+        /* 食物卡片 */
+        .food-item {
+            background: #ffffff;
+            border: 2px dashed #cbd5e1;
+            border-radius: 12px;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.03);
+            background-color: #fafaf9;
+        }
+        .food-emoji { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; text-align: center; line-height: 1.1; }
+        .food-name { font-weight: bold; text-align: center; color: #334155; margin-top: 4px; }
+
+        /* 根據難度調整大小 */
+        .grid-easy .food-emoji { font-size: 4rem; }
+        .grid-easy .food-name { font-size: 1.4rem; }
+        .grid-easy .food-item { padding: 10px; max-width: 140px; max-height: 140px; }
+
+        .grid-medium .food-emoji { font-size: 3rem; }
+        .grid-medium .food-name { font-size: 1.1rem; }
+        .grid-medium .food-item { padding: 8px; max-width: 120px; max-height: 120px; }
+
+        .grid-hard .food-emoji { font-size: 2.1rem; }
+        .grid-hard .food-name { font-size: 0.95rem; }
+        .grid-hard .food-item { padding: 4px; max-width: 95px; max-height: 95px; }
+
+        /* --- 解答標記 --- */
+        .ans-circle {
+            position: absolute;
+            width: 110%; height: 110%;
+            border: 6px solid var(--ans-blue);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.85;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-sizing: border-box;
+        }
+        .ans-cross {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .cross-line {
+            position: absolute;
+            width: 130%; height: 7px;
+            background-color: var(--ans-red);
+            border-radius: 4px;
+            opacity: 0.85;
+        }
+        .line1 { transform: rotate(45deg); }
+        .line2 { transform: rotate(-45deg); }
+
+        /* --- 底部計算區 --- */
+        .count-task {
+            background: #fef9c3;
+            border: 2px solid #facc15;
+            border-radius: 12px;
+            padding: 12px 15px;
+            font-size: 13pt;
+            font-weight: bold;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 25px;
+            margin-top: 15px;
+            color: #451a03;
+        }
+        .count-task .blank {
+            display: inline-block;
+            width: 40px;
+            border-bottom: 2px solid #334155;
+            text-align: center;
+            color: #ef4444; /* 紅色解答字 */
+        }
+
+        .sheet-footer { 
+            display: flex; justify-content: space-between; font-size: 10pt; color: #64748b; 
+            margin-top: 15px; padding-top: 10px; border-top: 1px solid #e2e8f0;
+        }
+
+        #hidden-capture { position: fixed; left: -5000px; width: 210mm; }
+
+        @media print {
+            .no-print { display: none; }
+            body { background: white; margin: 0; padding: 0;}
+            .sheet-scaler { transform: none !important; height: auto !important; margin: 0; }
+            .sheet { box-shadow: none; page-break-after: always; padding: 10mm 15mm; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="top-banner no-print"></div>
+
+<div class="controls no-print">
+    <h2>🍏 語文大腦體操 - 飲食小偵探產生器</h2>
+    <div style="font-weight: bold; margin-bottom: 12px; font-size: 1.1rem;">
+        <a href="https://www.facebook.com/profile.php?id=100063748491881" target="_blank" style="color: var(--primary-color); text-decoration: none;">設計者：鍾孟修 職能治療師</a>
+    </div>
+    <div class="designer-info">
+        <b>認知訓練升級：</b>結合「營養紅綠燈分類」與「視覺掃描搜尋」。內建 50+ 種常見食物。<br>
+        <b>訓練目標：</b>辨別食物健康度並做出特定動作，有效訓練<b>執行功能（抑制控制）、注意力與工作記憶</b>！
+    </div>
+
+    <div id="msgBox"></div>
+
+    <div class="control-grid">
+        <div class="control-group">
+            <label>📝 測驗卷標題</label>
+            <input type="text" id="titleInput" value="飲食小偵探：紅綠燈大挑戰">
+        </div>
+        <div class="control-group">
+            <label>⭐ 題目難易度 (數量)</label>
+            <select id="diffLevel">
+                <option value="easy">初階 (12個食物，字體極大，適合長輩)</option>
+                <option value="medium" selected>中階 (20個食物，適中版面)</option>
+                <option value="hard">高階 (30個食物，挑戰眼力與專注)</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>📄 產生總頁數 (皆不重複)</label>
+            <input type="number" id="pageCount" value="2" min="1" max="15">
+        </div>
+        <div class="control-group">
+            <label>👁️ 答案顯示</label>
+            <select id="showAns">
+                <option value="yes_after" selected>附帶產生解答頁 (接在每頁題目後)</option>
+                <option value="yes_end">附帶產生解答頁 (統一在所有題目後)</option>
+                <option value="no">僅產生測驗題目</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button class="gen-btn" onclick="generateSheets()">✨ 產生測驗卷</button>
+        <button class="print-btn" onclick="window.print()">🖨️ 直接列印</button>
+        <button class="pdf-btn" id="pdfBtn" onclick="downloadPDF()">📱 下載 PDF</button>
+    </div>
+</div>
+
+<div class="preview-area" id="output"></div>
+<div id="hidden-capture"></div>
+
+<script>
+    // 內建食物資料庫 (G=綠燈/健康, Y=黃燈/偶爾吃, R=紅燈/垃圾食物)
+    const foodDB = [
+        // Green / 綠燈食物
+        { id: 1, name: "蘋果", emoji: "🍎", light: "G", type: "fruit" },
+        { id: 2, name: "香蕉", emoji: "🍌", light: "G", type: "fruit" },
+        { id: 3, name: "西瓜", emoji: "🍉", light: "G", type: "fruit" },
+        { id: 4, name: "奇異果", emoji: "🥝", light: "G", type: "fruit" },
+        { id: 5, name: "葡萄", emoji: "🍇", light: "G", type: "fruit" },
+        { id: 6, name: "橘子", emoji: "🍊", light: "G", type: "fruit" },
+        { id: 7, name: "草莓", emoji: "🍓", light: "G", type: "fruit" },
+        { id: 8, name: "櫻桃", emoji: "🍒", light: "G", type: "fruit" },
+        { id: 9, name: "水蜜桃", emoji: "🍑", light: "G", type: "fruit" },
+        { id: 10, name: "花椰菜", emoji: "🥦", light: "G", type: "veg" },
+        { id: 11, name: "高麗菜", emoji: "🥬", light: "G", type: "veg" },
+        { id: 12, name: "胡蘿蔔", emoji: "🥕", light: "G", type: "veg" },
+        { id: 13, name: "番茄", emoji: "🍅", light: "G", type: "veg" },
+        { id: 14, name: "香菇", emoji: "🍄", light: "G", type: "veg" },
+        { id: 15, name: "玉米", emoji: "🌽", light: "G", type: "veg" },
+        { id: 16, name: "茄子", emoji: "🍆", light: "G", type: "veg" },
+        { id: 17, name: "洋蔥", emoji: "🧅", light: "G", type: "veg" },
+        { id: 18, name: "青椒", emoji: "🫑", light: "G", type: "veg" },
+        { id: 49, name: "南瓜", emoji: "🎃", light: "G", type: "veg" },
+        { id: 50, name: "小黃瓜", emoji: "🥒", light: "G", type: "veg" },
+        { id: 19, name: "鮮魚", emoji: "🐟", light: "G", type: "other" },
+        { id: 20, name: "雞肉", emoji: "🍗", light: "G", type: "other" },
+        { id: 21, name: "雞蛋", emoji: "🥚", light: "G", type: "other" },
+        { id: 22, name: "鮮奶", emoji: "🥛", light: "G", type: "other" },
+        { id: 23, name: "地瓜", emoji: "🍠", light: "G", type: "other" },
+        { id: 24, name: "馬鈴薯", emoji: "🥔", light: "G", type: "other" },
+        { id: 25, name: "蝦子", emoji: "🦐", light: "G", type: "other" },
+        { id: 51, name: "豆漿", emoji: "🥛", light: "G", type: "other" },
+
+        // Yellow / 黃燈食物 (精緻澱粉或輕度加工)
+        { id: 26, name: "白吐司", emoji: "🍞", light: "Y", type: "other" },
+        { id: 27, name: "起司", emoji: "🧀", light: "Y", type: "other" },
+        { id: 28, name: "果汁", emoji: "🧃", light: "Y", type: "other" },
+        { id: 29, name: "可頌", emoji: "🥐", light: "Y", type: "other" },
+        { id: 30, name: "水餃", emoji: "🥟", light: "Y", type: "other" },
+        { id: 31, name: "白飯", emoji: "🍚", light: "Y", type: "other" },
+        { id: 32, name: "鬆餅", emoji: "🥞", light: "Y", type: "other" },
+        { id: 33, name: "義大利麵", emoji: "🍝", light: "Y", type: "other" },
+        { id: 34, name: "咖啡", emoji: "☕", light: "Y", type: "other" },
+
+        // Red / 紅燈食物 (高油糖、超加工)
+        { id: 35, name: "薯條", emoji: "🍟", light: "R", type: "other" },
+        { id: 36, name: "漢堡", emoji: "🍔", light: "R", type: "other" },
+        { id: 37, name: "披薩", emoji: "🍕", light: "R", type: "other" },
+        { id: 38, name: "熱狗", emoji: "🌭", light: "R", type: "other" },
+        { id: 39, name: "培根", emoji: "🥓", light: "R", type: "other" },
+        { id: 40, name: "甜甜圈", emoji: "🍩", light: "R", type: "other" },
+        { id: 41, name: "蛋糕", emoji: "🍰", light: "R", type: "other" },
+        { id: 42, name: "糖果", emoji: "🍬", light: "R", type: "other" },
+        { id: 43, name: "巧克力", emoji: "🍫", light: "R", type: "other" },
+        { id: 44, name: "冰淇淋", emoji: "🍦", light: "R", type: "other" },
+        { id: 45, name: "汽水", emoji: "🥤", light: "R", type: "other" },
+        { id: 46, name: "珍珠奶茶", emoji: "🧋", light: "R", type: "other" },
+        { id: 47, name: "爆米花", emoji: "🍿", light: "R", type: "other" },
+        { id: 48, name: "餅乾", emoji: "🍪", light: "R", type: "other" },
+        { id: 52, name: "泡麵", emoji: "🍜", light: "R", type: "other" }
+    ];
+
+    // 顯示提示訊息
+    function showMessage(text, type = 'error') {
+        const msgBox = document.getElementById('msgBox');
+        msgBox.innerText = text;
+        msgBox.style.display = 'block';
+        msgBox.style.backgroundColor = type === 'error' ? '#fee2e2' : '#ecfdf5';
+        msgBox.style.color = type === 'error' ? '#b91c1c' : '#065f46';
+        setTimeout(() => msgBox.style.display = 'none', 3000);
+    }
+
+    // 陣列洗牌函數
+    function shuffleArray(array) {
+        let newArr = [...array];
+        for (let i = newArr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+        }
+        return newArr;
+    }
+
+    // 產生微小的隨機旋轉與偏移，讓版面看起來像散落的卡片
+    function getRandomTransform() {
+        const rot = Math.random() * 12 - 6; // -6 到 +6 度
+        const tx = Math.random() * 8 - 4;   // -4 到 +4 px
+        const ty = Math.random() * 8 - 4;
+        return `transform: rotate(${rot}deg) translate(${tx}px, ${ty}px);`;
+    }
+
+    // 選擇題目項目 (保證至少有一定數量水果蔬菜，避免答案為0太無聊)
+    function selectFoods(count) {
+        let fruits = foodDB.filter(f => f.type === 'fruit');
+        let veggies = foodDB.filter(f => f.type === 'veg');
+        
+        let selected = [];
+        let numGuaranteed = count >= 20 ? 2 : 1; 
+        
+        let f_shuffled = shuffleArray(fruits);
+        let v_shuffled = shuffleArray(veggies);
+        
+        for(let i=0; i<numGuaranteed; i++) {
+            selected.push(f_shuffled[i]);
+            selected.push(v_shuffled[i]);
+        }
+        
+        let selectedIds = selected.map(s => s.id);
+        let remainingDB = foodDB.filter(f => !selectedIds.includes(f.id));
+        remainingDB = shuffleArray(remainingDB);
+        
+        for(let i=0; i < count - (numGuaranteed * 2); i++) {
+            selected.push(remainingDB[i]);
+        }
+        
+        // 賦予每個選中項目獨立的變形樣式
+        return shuffleArray(selected).map(item => ({...item, transformStyle: getRandomTransform()}));
+    }
+
+    // 主要產生流程
+    function generateSheets() {
+        const title = document.getElementById('titleInput').value || "飲食小偵探：紅綠燈大挑戰";
+        const diffLevel = document.getElementById('diffLevel').value;
+        const pages = Math.max(1, parseInt(document.getElementById('pageCount').value) || 1);
+        const showAns = document.getElementById('showAns').value;
+        const output = document.getElementById('output');
+        
+        let slotCount = 12;
+        if (diffLevel === 'medium') slotCount = 20;
+        if (diffLevel === 'hard') slotCount = 30;
+
+        output.innerHTML = '<div style="padding: 20px; font-weight: bold; color: var(--primary-color); font-size: 18px;">正在為您排版題目，請稍候...</div>';
+
+        setTimeout(() => {
+            output.innerHTML = '';
+            let allPagesData = [];
+            
+            for (let p = 1; p <= pages; p++) {
+                let items = selectFoods(slotCount);
+                allPagesData.push({ items, pageNum: p });
+                
+                if (showAns === 'yes_after') {
+                    output.appendChild(renderPage(title, items, diffLevel, p, false));
+                    output.appendChild(renderPage(title + " (解答)", items, diffLevel, p, true));
+                } else {
+                    output.appendChild(renderPage(title, items, diffLevel, p, false));
+                }
+            }
+
+            if (showAns === 'yes_end') {
+                allPagesData.forEach(data => {
+                    output.appendChild(renderPage(title + " (解答)", data.items, diffLevel, data.pageNum, true));
+                });
+            }
+            
+            updateScale();
+            showMessage(`✨ 成功產生 ${pages} 頁測驗卷！`, "success");
+
+        }, 50);
+    }
+
+    // 渲染單頁 DOM
+    function renderPage(title, items, diffLevel, pageNum, isAns) {
+        const scaler = document.createElement('div');
+        scaler.className = 'sheet-scaler';
+        const sheet = document.createElement('div');
+        sheet.className = 'sheet';
+
+        const gridClass = `grid-${diffLevel}`;
+        
+        const fruitCount = items.filter(i => i.type === 'fruit').length;
+        const vegCount = items.filter(i => i.type === 'veg').length;
+
+        const renderItem = (item) => {
+            let marker = '';
+            if (isAns) {
+                if (item.light === 'G') marker = `<div class="ans-circle"></div>`;
+                if (item.light === 'R') marker = `
+                    <div class="ans-cross">
+                        <div class="cross-line line1"></div>
+                        <div class="cross-line line2"></div>
+                    </div>`;
+                // 黃燈不標記
+            }
+            
+            return `
+                <div class="food-item" style="${item.transformStyle}">
+                    <div class="food-emoji">${item.emoji}</div>
+                    <div class="food-name">${item.name}</div>
+                    ${marker}
+                </div>
+            `;
+        };
+
+        sheet.innerHTML = `
+            <div class="sheet-header">
+                <div class="sheet-title">${title}</div>
+                <div class="sheet-info">
+                    <span>姓名：__________</span>
+                    <span>日期：___月___日</span>
+                    <span>得分：____ / 100</span>
+                </div>
+            </div>
+
+            <div class="instruction">
+                <div style="flex: 1; text-align: left;">
+                    <div class="instruction-title">🕵️ 飲食小偵探任務：</div>
+                    <div class="task-list">
+                        <span>⭕ <b>綠燈食物</b> (天然健康，建議天天吃)：請畫上<b>藍色大圓圈</b>。</span><br>
+                        <span>❌ <b>紅燈食物</b> (高油糖、垃圾食物)：請畫上<b>紅色大叉叉</b>。</span><br>
+                        <span>⚠️ <b>黃燈食物</b> (輕加工或精緻澱粉，建議少吃)：請<b>不要</b>做任何記號。</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="worksheet-body">
+                <div class="food-grid ${gridClass}">
+                    ${items.map(item => renderItem(item)).join('')}
+                </div>
+                
+                <div class="count-task">
+                    <span>🔍 找一找並寫下數量：</span>
+                    <span>🍎 水果有 <span class="blank">${isAns ? fruitCount : ''}</span> 種</span>
+                    <span>🥦 蔬菜有 <span class="blank">${isAns ? vegCount : ''}</span> 種</span>
+                </div>
+            </div>
+
+            <div class="sheet-footer">
+                <span>${isAns ? '解答卷' : '測驗卷'} - 第 ${pageNum} 頁</span>
+                <span><a href="https://www.facebook.com/profile.php?id=100063748491881" target="_blank" style="color: #64748b; text-decoration: none;">設計者：鍾孟修 職能治療師</a></span>
+            </div>
+        `;
+        scaler.appendChild(sheet);
+        return scaler;
+    }
+
+    // 處理視窗縮放，確保 A4 頁面預覽
+    function updateScale() {
+        const previewArea = document.querySelector('.preview-area');
+        if (!previewArea) return;
+        
+        const containerWidth = previewArea.clientWidth - 40;
+        const scalers = document.querySelectorAll('.sheet-scaler');
+        if (scalers.length === 0) return;
+        
+        const sheetWidth = 210 * 3.7795; 
+        let scale = containerWidth / sheetWidth;
+        if (scale > 1) scale = 1; 
+        
+        scalers.forEach(s => {
+            s.style.transform = `scale(${scale})`;
+            s.style.height = (297 * 3.7795 * scale) + "px";
+        });
+    }
+
+    // 將頁面轉換為 PDF 檔案並下載
+    async function downloadPDF() {
+        const { jsPDF } = window.jspdf;
+        const btn = document.getElementById('pdfBtn');
+        const sheets = document.querySelectorAll('.sheet');
+        const hidden = document.getElementById('hidden-capture');
+        
+        if (sheets.length === 0) {
+            showMessage("請先點擊「產生測驗卷」再下載 PDF", "error");
+            return;
+        }
+        
+        btn.disabled = true;
+        btn.innerText = "⏳ 準備轉換 PDF...";
+
+        try {
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            for (let i = 0; i < sheets.length; i++) {
+                btn.innerText = `⏳ 正在轉換第 ${i+1}/${sheets.length} 頁...`;
+                
+                const clone = sheets[i].cloneNode(true);
+                clone.style.transform = "none";
+                hidden.appendChild(clone);
+                
+                // 設定高解析度轉換，確保 Emoji 與 CSS 繪圖清晰
+                const canvas = await html2canvas(clone, { scale: 1.5, useCORS: true }); 
+                hidden.removeChild(clone);
+                
+                const imgData = canvas.toDataURL('image/jpeg', 0.85);
+                if (i > 0) pdf.addPage();
+                pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+            }
+            pdf.save('大腦體操_飲食小偵探.pdf');
+            showMessage("✅ PDF 下載完成！", "success");
+        } catch (e) {
+            console.error(e);
+            showMessage("轉換 PDF 時發生錯誤。如果頁數過多，建議分次產生，或直接使用「直接列印」。", "error");
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "📱 下載 PDF";
+        }
+    }
+
+    window.addEventListener('resize', updateScale);
+    window.onload = generateSheets;
+</script>
+
+</body>
+</html>
